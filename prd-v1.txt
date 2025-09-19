@@ -1,0 +1,250 @@
+### Product Requirements Document (PRD): Chess Next Best Move Predictor Prototype
+
+#### 1. Product Overview
+**Product Name**: ChessPredictor-Proto  
+**Version**: 1.0 (Prototype)  
+**Date**: September 14, 2025  
+**Author**: Grok (xAI Assistant)  
+
+**Description**:  
+This prototype is a minimal, one-day implementation of a chess AI that predicts the next best move using a hybrid approach (neural network evaluation + minimax/alpha-beta pruning), trained on grandmaster games from the Lichess Elite Database. The system includes a simulated environment for model learning (using OpenSpiel for chess simulation and self-play), a demo chessboard GUI for user-AI interaction, and move comparison with Stockfish. As a backup due to time constraints, the prototype defaults to Stockfish's 2nd or 3rd best move for the AI's response, allowing quick validation of the user interface and comparison logic. This enables a functional demo while scaffolding for the full hybrid model (e.g., replacing Stockfish with a custom NNUE in future iterations).
+
+**Objectives**:  
+- Demonstrate a playable chess demo with AI moves and Stockfish comparison in under 8–12 hours.  
+- Set up a learning environment to ingest Lichess Elite Database games for future hybrid training (supervised + limited RL).  
+- Achieve a "last resort" backup using Stockfish to ensure demo reliability, then swap in custom logic as time allows.  
+- Target Elo simulation: Backup uses Stockfish (~3500 Elo); full hybrid aims for ~2500–3000 Elo in Phase 2.  
+
+**Target Users**:  
+- Developers/Students (for minor project demo).  
+- Chess enthusiasts (for interactive play and analysis).  
+
+**Success Metrics**:  
+- Demo runs without crashes; user can make 5+ moves with AI responses.  
+- Backup integration: 100% uptime for Stockfish moves.  
+- Learning environment: Successfully parses 1,000+ games from Lichess Elite Database in <1 hour.  
+- Comparison: Displays top 3 Stockfish moves with centipawn scores for each AI/user move.  
+
+**Assumptions & Constraints**:  
+- Hardware: NVIDIA RTX 3050 (6GB VRAM) for local dev; Google Colab for any quick training tests.  
+- Time: <12 hours total (focus on backup first, then custom hybrid).  
+- No full NNUE training (infeasible in 1 day; use pre-trained Stockfish as proxy).  
+- Libraries: Use available env (chess, pygame, numpy, torch, open_spiel via code_execution if needed).  
+- Dataset: Lichess Elite Database (filtered grandmaster games, ~2500+ Elo).  
+
+**Dependencies**:  
+- Libraries: `chess`, `pygame` (GUI), `stockfish` (PyPI for integration), `numpy` (evals), `open_spiel` (environment).  
+- Dataset: Lichess Elite Database (download 1–2 months' PGN files).  
+- External: Stockfish binary (download from stockfishchess.org).  
+
+**Risks & Mitigations**:  
+- Time overrun: Prioritize backup (Stockfish integration) in first 4 hours.  
+- Dataset download: Use torrent/direct links; fallback to small sample PGN if slow.  
+- GUI bugs: Use simple text-based rendering if Pygame issues arise.  
+
+#### 2. Key Features
+1. **Learning Environment**:  
+   - Simulates chess games using OpenSpiel for self-play and dataset ingestion.  
+   - Parses Lichess Elite Database PGN files to extract board states, moves, and evaluations for training data generation.  
+   - Outputs: Processed dataset (e.g., FEN states + best moves) for future NNUE training.  
+
+2. **Demo Chessboard GUI**:  
+   - Visual board (Pygame) showing pieces, legal moves, and current state.  
+   - User inputs moves via clicks or UCI notation.  
+   - AI responds with predicted move + centipawn score.  
+
+3. **AI Move Prediction (Backup + Custom)**:  
+   - **Backup**: Uses Stockfish's 2nd/3rd best move (via `stockfish` library) to simulate "AI" response.  
+   - **Custom**: Minimax/alpha-beta with handcrafted eval (material + basic positional); swap in for demo if time allows.  
+   - Displays: Move in UCI/SAN, centipawn score (e.g., +0.5 pawns).  
+
+4. **Stockfish Comparison**:  
+   - After each user/AI move, query Stockfish for top 3 moves + scores.  
+   - Visual diff: Table showing "User/AI Move vs. Stockfish Top 3" with accuracy (e.g., "Your move ranks #2").  
+
+5. **Teaching/Output Mode**:  
+   - Console log or GUI popup: "AI suggests e2e4 (+1.2 pawns); Stockfish agrees (top move)."  
+
+#### 3. Technical Requirements
+**Architecture**:  
+- **Environment**: OpenSpiel for chess simulation (state, actions, rewards).  
+- **Dataset Processing**: `chess.pgn` to parse PGN; NumPy for tensor conversion (FEN to 8x8x12 board array).  
+- **Model (Backup)**: `stockfish` library for engine calls (get_top_moves(3)).  
+- **Model (Custom)**: Simple minimax (depth 3–4) with eval function (material balance in centipawns).  
+- **GUI**: Pygame for 400x400 board; render pieces as text/sprites.  
+- **Integration**: After user move, call AI predict → apply to board → Stockfish compare → update GUI.  
+
+**Data Flow**:  
+1. Load/parse dataset → Simulate games in OpenSpiel (e.g., replay grandmaster moves).  
+2. User interacts in GUI → Push move to board.  
+3. AI predicts (backup/custom) → Display + compare to Stockfish.  
+
+**Performance**:  
+- Inference: <1s/move on RTX 3050 (CPU for minimax; GPU unused in prototype).  
+- Storage: ~100–500 MB for 1 month of Elite Database.  
+
+**Non-Functional**:  
+- Language: Python 3.12.  
+- OS: Cross-platform (test on local).  
+- Accessibility: Console fallback if GUI fails.  
+
+#### 4. Step-by-Step Implementation Plan (Under 1 Day: ~8–12 Hours)
+**Total Time Estimate**: 8–12 hours (break into 1–2 hour blocks; start with backup).  
+**Prerequisites (0.5 hours)**:  
+- Download Stockfish binary (from stockfishchess.org/download; latest 17.1).  
+- Download Lichess Elite Database: Use torrent for 2013–2020 (3.6 GB) from https://database.nikonoel.fr/ or direct monthly PGN (e.g., Jan/Feb 2025 ~100 MB each) from the site or Lichess team notifications (join https://lichess.org/team/lichess-elite-database). Fallback: Use a small sample PGN from https://database.lichess.org/ (filter for high Elo).  
+- Install libs: `pip install chess pygame stockfish numpy open-spiel` (assume env supports; test in Colab if needed).  
+
+**Step 1: Backup Integration with Stockfish (2–3 hours; Priority 1)**  
+   - Goal: Core AI response using Stockfish's 2nd/3rd best move.  
+   - Code:  
+     ```python
+     from stockfish import Stockfish
+     import chess
+
+     stockfish = Stockfish(path="path/to/stockfish")  # Set path to binary
+     board = chess.Board()
+
+     def ai_predict_backup(board, top_n=3):
+         stockfish.set_fen_position(board.fen())
+         top_moves = stockfish.get_top_moves(top_n)  # Returns list of {'Move': 'e2e4', 'Centipawn': 120}
+         ai_move = top_moves[1] if len(top_moves) > 1 else top_moves[0]  # 2nd best as backup
+         return ai_move['Move'], ai_move['Centipawn'] / 100.0  # UCI, centipawns to pawns
+
+     # Test: print(ai_predict_backup(board))
+     ```  
+   - Test: Run on initial board; verify 2nd move (e.g., e7e5 or d7d5).  
+
+**Step 2: Learning Environment Setup (1–2 hours; Parallel with Step 1)**  
+   - Goal: Simulate/replay grandmaster games for dataset prep (no full training; generate sample states for future use).  
+   - Download: Grab 1 month PGN (e.g., Feb 2022, 98 MB from https://database.nikonoel.fr/).  
+   - Code: Use OpenSpiel + chess.pgn to parse and simulate.  
+     ```python
+     from open_spiel.python import games as spiel_games
+     import chess.pgn
+     import numpy as np
+
+     game = spiel_games.load_game("chess")
+     env_state = game.new_initial_state()
+
+     def parse_dataset(pgn_file):
+         with open(pgn_file) as f:
+             while True:
+                 game_pgn = chess.pgn.read_game(f)
+                 if game_pgn is None: break
+                 board = game_pgn.board()
+                 states = []  # List of (FEN, best_move, eval)
+                 for move in game_pgn.mainline_moves():
+                     board.push(move)
+                     states.append((board.fen(), str(move), evaluate_board(board)))  # Simple eval
+                 # Simulate in OpenSpiel
+                 for fen, move_uci, _ in states[:10]:  # Sample 10 moves
+                     env_state.set_from(fen, move_uci)  # Replay in env
+                     print(f"Simulated: {env_state}")
+
+     def evaluate_board(board):  # Simple material eval in centipawns
+         return sum(piece_values.get(p.piece_type, 0) for p in board.piece_map().values()) / 100.0
+
+     piece_values = {chess.PAWN: 100, chess.KNIGHT: 320, chess.BISHOP: 330, chess.ROOK: 500, chess.QUEEN: 900}
+
+     # Run: parse_dataset("lichess_elite_2025-01.pgn")  # Outputs simulated states
+     ```  
+   - Output: Console log of 100+ simulated states; save as CSV for Phase 2 training data.  
+   - Test: Parse 100 games; ensure no errors.  
+
+**Step 3: Demo Chessboard GUI (2–3 hours)**  
+   - Goal: Interactive board for user moves + AI response.  
+   - Code: Pygame + chess for rendering; integrate ai_predict_backup.  
+     ```python
+     import pygame
+     import chess
+
+     pygame.init()
+     screen = pygame.display.set_mode((400, 400))
+     board = chess.Board()
+     selected_square = None
+
+     def draw_board(screen, board):
+         square_size = 50
+         for row in range(8):
+             for col in range(8):
+                 color = (240, 217, 181) if (row + col) % 2 == 0 else (181, 136, 99)
+                 pygame.draw.rect(screen, color, (col * square_size, row * square_size, square_size, square_size))
+                 piece = board.piece_at(chess.square(col, 7 - row))
+                 if piece:  # Text render
+                     text = pygame.font.SysFont('arial', 24).render(str(piece.symbol()), True, (0, 0, 0))
+                     screen.blit(text, (col * square_size + 10, row * square_size + 10))
+         pygame.display.flip()
+
+     running = True
+     while running:
+         for event in pygame.event.get():
+             if event.type == pygame.QUIT:
+                 running = False
+             if event.type == pygame.MOUSEBUTTONDOWN:
+                 col, row = event.pos[0] // 50, 7 - (event.pos[1] // 50)
+                 square = chess.square(col, row)
+                 if selected_square is None:
+                     selected_square = square
+                 else:
+                     move = chess.Move(selected_square, square)
+                     if move in board.legal_moves:
+                         board.push(move)
+                         # AI responds
+                         ai_uci, ai_score = ai_predict_backup(board)
+                         ai_move = chess.Move.from_uci(ai_uci)
+                         board.push(ai_move)
+                         print(f"AI Move: {ai_uci} (+{ai_score:.2f} pawns)")
+                     selected_square = None
+         screen.fill((255, 255, 255))
+         draw_board(screen, board)
+     pygame.quit()
+     ```  
+   - Test: Click to make 3 moves; verify AI responds.  
+
+**Step 4: Stockfish Comparison (1–2 hours)**  
+   - Goal: After each move, show top 3 Stockfish moves vs. user/AI.  
+   - Code: Extend Step 3; add table display (console or Pygame text).  
+     ```python
+     def compare_to_stockfish(board, current_move):
+         stockfish.set_fen_position(board.fen())
+         top_moves = stockfish.get_top_moves(3)
+         print("Stockfish Top 3:")
+         for i, m in enumerate(top_moves):
+             rank = i + 1 if m['Move'] == current_move else "Mismatch"
+             print(f"{rank}: {m['Move']} ({m['Centipawn']/100:.2f} pawns)")
+         # GUI: Render as text overlay
+
+     # Call after user/AI move: compare_to_stockfish(board, str(move))
+     ```  
+   - Test: After user move, display comparison (e.g., "Your e2e4 ranks #1").  
+
+**Step 5: Custom Hybrid Swap-In & Polish (1–2 hours; If Time Allows)**  
+   - Replace ai_predict_backup with minimax (from prior chats; depth 3, handcrafted eval).  
+   - Integrate learning env output (e.g., use parsed states to bias move ordering).  
+   - Polish: Add reset button, save game log.  
+   - Test: Run full game; compare custom vs. backup.  
+
+**Step 6: Testing & Demo Prep (0.5–1 hour)**  
+   - Run end-to-end: User plays 5 moves; verify env parses dataset, GUI updates, comparison shows.  
+   - Backup Fallback: If custom fails, toggle to Stockfish mode.  
+   - Record: 1-min video of demo (board play + comparison).  
+
+#### 5. Timeline & Milestones
+| Time Block | Milestone | Deliverable |
+|------------|-----------|-------------|
+| 0–3 hrs | Backup + Env Setup | Stockfish AI + Parsed dataset sample. |
+| 3–6 hrs | GUI + Integration | Playable board with AI responses. |
+| 6–9 hrs | Comparison + Custom | Move diffs; swap-in minimax if possible. |
+| 9–12 hrs | Testing + Demo | Video; full prototype script. |
+
+#### 6. Appendix
+**Future Iterations (Post-Prototype)**:  
+- Phase 2: Train NNUE on parsed dataset (~50 GPU hours on Colab).  
+- Add CLIO adaptations (e.g., uncertainty in eval).  
+
+**References**:  
+- Lichess Elite DB: https://database.nikonoel.fr/ (torrent/direct PGN).  
+- Stockfish Python: https://pypi.org/project/stockfish/.  
+
+This PRD ensures a shippable prototype in <1 day. Start with Step 1—good luck! If you need code tweaks, ask.
